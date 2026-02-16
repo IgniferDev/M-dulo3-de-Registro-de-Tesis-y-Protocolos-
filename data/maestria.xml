@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<maestria>
+  <areas/>
+  <personal/>
+  <materias/>
+  <alumnos>
+    <alumno matricula="A2023001">
+      <nombre>Juan Pérez</nombre>
+    </alumno>
+    <alumno matricula="A2023002">
+      <nombre>Ana López</nombre>
+    </alumno>
+  </alumnos>
+  <profesores>
+    <profesor id="P100">
+      <nombre>Dr. Carlos Ruiz</nombre>
+    </profesor>
+    <profesor id="P101">
+      <nombre>Dra. María Gómez</nombre>
+    </profesor>
+  </profesores>
+  <!-- NUEVO NODO DEL MÓDULO 3 -->
+  <tesis>
+    <tesis clave="T-001">
+      <clave>T-001</clave>
+      <titulo>uhsadiasndinfbiuisadnosanbfuiasdnsuaifniosaodjsaiodnfsoasafsaf</titulo>
+      <matricula>A2023001</matricula>
+      <director>P100</director>
+      <codirector/>
+      <linea/>
+      <fecha/>
+      <avance>10</avance>
+      <modalidad/>
+      <estatus>Registrado</estatus>
+    </tesis>
+  </tesis>
+</maestria>
