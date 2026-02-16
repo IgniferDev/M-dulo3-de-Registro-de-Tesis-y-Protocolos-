@@ -1,44 +1,52 @@
 <?php
 require_once 'conexion_xml.php';
 
-/* ================= VALIDACIONES ================= */
+/* =========================
+   VALIDACIÓN CENTRAL
+========================= */
+function validarTesis(array $d, DOMXPath $xp, ?string $claveOriginal = null): array {
 
-function validarTesis(array $d, DOMXPath $xp): array {
-
-    // Clave única
-    if ($xp->query("//tesis/tesis[@clave='{$d['clave']}']")->length > 0) {
+    // 🔑 Validar clave única
+    $q = "//tesis/tesis[@clave='{$d['clave']}']";
+    if ($claveOriginal !== null) {
+        $q .= " and @clave!='{$claveOriginal}'";
+    }
+    if ($xp->query($q)->length > 0) {
         return ['ok'=>false,'msg'=>'La clave ya existe'];
     }
 
-    // Título mínimo
-    if (strlen($d['titulo']) < 20) {
+    // 📄 Título mínimo
+    if (mb_strlen(trim($d['titulo'])) < 20) {
         return ['ok'=>false,'msg'=>'El título debe tener mínimo 20 caracteres'];
     }
 
-    // Alumno existe
+    // 🎓 Alumno existe
     if ($xp->query("//alumnos/alumno[@matricula='{$d['matricula']}']")->length == 0) {
         return ['ok'=>false,'msg'=>'La matrícula no existe'];
     }
 
-    // Director existe
+    // 👨‍🏫 Director existe
     if ($xp->query("//profesores/profesor[@id='{$d['director']}']")->length == 0) {
         return ['ok'=>false,'msg'=>'El director no existe'];
     }
 
-    // Co-director opcional
-    if (!empty($d['codirector'])) {
-        if ($xp->query("//profesores/profesor[@id='{$d['codirector']}']")->length == 0) {
-            return ['ok'=>false,'msg'=>'El co-director no existe'];
-        }
+    // 👥 Codirector (opcional)
+    if (!empty($d['codirector']) &&
+        $xp->query("//profesores/profesor[@id='{$d['codirector']}']")->length == 0) {
+        return ['ok'=>false,'msg'=>'El co-director no existe'];
     }
 
-    // Avance
-    if ($d['avance'] < 0 || $d['avance'] > 100) {
-        return ['ok'=>false,'msg'=>'Avance inválido'];
+    // 📊 Avance válido
+    if (!is_numeric($d['avance']) || $d['avance'] < 0 || $d['avance'] > 100) {
+        return ['ok'=>false,'msg'=>'El avance debe estar entre 0 y 100'];
     }
 
-    // Un alumno no puede tener dos tesis en proceso
-    $q = "//tesis/tesis[matricula='{$d['matricula']}' and (estatus='Registrado' or estatus='En Revisión')]";
+    // 🚫 Un alumno no puede tener dos tesis en proceso
+    $q = "//tesis/tesis[matricula='{$d['matricula']}'
+          and (estatus='Registrado' or estatus='En Revisión')]";
+    if ($claveOriginal !== null) {
+        $q .= " and @clave!='{$claveOriginal}'";
+    }
     if ($xp->query($q)->length > 0) {
         return ['ok'=>false,'msg'=>'El alumno ya tiene una tesis en proceso'];
     }
@@ -46,8 +54,9 @@ function validarTesis(array $d, DOMXPath $xp): array {
     return ['ok'=>true];
 }
 
-/* ================= CRUD ================= */
-
+/* =========================
+   CREAR TESIS
+========================= */
 function crearTesis(array $d): array {
     $dom = cargarXML();
     $xp  = getXPath($dom);
@@ -56,50 +65,51 @@ function crearTesis(array $d): array {
     if (!$v['ok']) return $v;
 
     $root = $dom->getElementsByTagName('tesis')->item(0);
+    if (!$root) {
+        $root = $dom->createElement('tesis');
+        $dom->documentElement->appendChild($root);
+    }
 
     $t = $dom->createElement('tesis');
     $t->setAttribute('clave', $d['clave']);
 
-    foreach ($d as $k=>$v) {
-        $el = $dom->createElement($k, $v);
-        $t->appendChild($el);
+    foreach ($d as $k => $v) {
+        if ($v !== '') {
+            $el = $dom->createElement($k);
+            $el->appendChild($dom->createTextNode($v));
+            $t->appendChild($el);
+        }
     }
 
     $root->appendChild($t);
     guardarXML($dom);
 
-    return ['ok'=>true,'msg'=>'Tesis registrada'];
+    return ['ok'=>true,'msg'=>'Tesis registrada correctamente'];
 }
 
+/* =========================
+   OBTENER TODAS
+========================= */
 function obtenerTesis(): array {
     $dom = cargarXML();
     $xp  = getXPath($dom);
+    $res = [];
 
-    $out = [];
     foreach ($xp->query("//tesis/tesis") as $t) {
-         /** @var DOMElement $t */
-        $row = ['clave' => $t->getAttribute('clave')];
+        $row = ['clave'=>$t->getAttribute('clave')];
         foreach ($t->childNodes as $c) {
-            if ($c->nodeType === 1) {
+            if ($c->nodeType === XML_ELEMENT_NODE) {
                 $row[$c->nodeName] = $c->textContent;
             }
         }
-        $out[] = $row;
+        $res[] = $row;
     }
-    return $out;
+    return $res;
 }
 
-function eliminarTesis(string $clave): void {
-    $dom = cargarXML();
-    $xp  = getXPath($dom);
-
-    $n = $xp->query("//tesis/tesis[@clave='$clave']")->item(0);
-    if ($n) {
-        $n->parentNode->removeChild($n);
-        guardarXML($dom);
-    }
-}
-
+/* =========================
+   OBTENER POR CLAVE
+========================= */
 function obtenerTesisPorClave(string $clave): ?array {
     $dom = cargarXML();
     $xp  = getXPath($dom);
@@ -108,31 +118,35 @@ function obtenerTesisPorClave(string $clave): ?array {
     if ($n->length === 0) return null;
 
     $t = $n->item(0);
-    /** @var DOMElement $t */
+    $data = ['clave'=>$t->getAttribute('clave')];
 
-    $data = ['clave' => $t->getAttribute('clave')];
     foreach ($t->childNodes as $c) {
-        if ($c->nodeType === 1) {
+        if ($c->nodeType === XML_ELEMENT_NODE) {
             $data[$c->nodeName] = $c->textContent;
         }
     }
     return $data;
 }
 
-function actualizarTesis(string $clave, array $d): array {
+/* =========================
+   ACTUALIZAR TESIS
+========================= */
+function actualizarTesis(string $claveOriginal, array $d): array {
     $dom = cargarXML();
     $xp  = getXPath($dom);
 
-    $n = $xp->query("//tesis/tesis[@clave='$clave']");
-    if ($n->length === 0) return ['ok'=>false,'msg'=>'No existe'];
+    $n = $xp->query("//tesis/tesis[@clave='$claveOriginal']");
+    if ($n->length === 0) {
+        return ['ok'=>false,'msg'=>'La tesis no existe'];
+    }
 
-    $t = $n->item(0);
-    $parent = $t->parentNode;
-    $parent->removeChild($t); // evitar conflicto de validación
+    $tesis = $n->item(0);
+    $parent = $tesis->parentNode;
+    $parent->removeChild($tesis);
 
-    $v = validarTesis($d, $xp);
+    $v = validarTesis($d, $xp, $claveOriginal);
     if (!$v['ok']) {
-        $parent->appendChild($t);
+        $parent->appendChild($tesis);
         guardarXML($dom);
         return $v;
     }
@@ -140,12 +154,32 @@ function actualizarTesis(string $clave, array $d): array {
     $nuevo = $dom->createElement('tesis');
     $nuevo->setAttribute('clave', $d['clave']);
 
-    foreach ($d as $k=>$v) {
-        $nuevo->appendChild($dom->createElement($k, $v));
+    foreach ($d as $k => $v) {
+        if ($v !== '') {
+            $el = $dom->createElement($k);
+            $el->appendChild($dom->createTextNode($v));
+            $nuevo->appendChild($el);
+        }
     }
 
     $parent->appendChild($nuevo);
     guardarXML($dom);
 
-    return ['ok'=>true,'msg'=>'Tesis actualizada'];
+    return ['ok'=>true,'msg'=>'Tesis actualizada correctamente'];
+}
+
+/* =========================
+   ELIMINAR TESIS
+========================= */
+function eliminarTesis(string $clave): bool {
+    $dom = cargarXML();
+    $xp  = getXPath($dom);
+
+    $n = $xp->query("//tesis/tesis[@clave='$clave']");
+    if ($n->length === 0) return false;
+
+    $t = $n->item(0);
+    $t->parentNode->removeChild($t);
+    guardarXML($dom);
+    return true;
 }
